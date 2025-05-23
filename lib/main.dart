@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:app_tracking_transparency/app_tracking_transparency.dart' show AppTrackingTransparency, TrackingStatus;
 import 'package:bloc/bloc.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/material.dart';
@@ -13,7 +14,9 @@ import 'package:appsflyer_sdk/appsflyer_sdk.dart';
 import 'package:timezone/data/latest.dart' as tzData;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:percent_indicator/percent_indicator.dart';
-
+import 'dart:convert';
+import 'dart:io';
+import 'package:app_tracking_transparency/app_tracking_transparency.dart' show AppTrackingTransparency, TrackingStatus;
 // ====================
 // CONSTANTS
 // ====================
@@ -21,6 +24,19 @@ const String APPSFLYER_DEV_KEY = "qsBLmy7dAXDQhowM8V3ca4";
 const String APPSFLYER_APP_ID = "6746164027";
 const String WEBVIEW_URL = "https://apig.selchick.digital";
 
+// ... остальные импорты ...
+
+// <--- ДОБАВИТЬ ЭТУ ФУНКЦИЮ ВВЕРХУ ФАЙЛА --->
+Future<void> _initATT() async {
+  if (!Platform.isIOS) return;
+  final TrackingStatus s = await AppTrackingTransparency.trackingAuthorizationStatus;
+  if (s == TrackingStatus.notDetermined) {
+    await Future.delayed(const Duration(milliseconds: 1000));
+    await AppTrackingTransparency.requestTrackingAuthorization();
+  }
+  final uuid = await AppTrackingTransparency.getAdvertisingIdentifier();
+  print("UUID: $uuid");
+}
 // ====================
 // MODEL
 // ====================
@@ -205,6 +221,7 @@ class SplashBloc extends Bloc<SplashEvent, SplashState> {
   final TokenChannelService tokenChannelService;
 
   bool _navigated = false;
+
 
   SplashBloc(this.tokenChannelService) : super(SplashState()) {
     on<SplashStarted>((event, emit) async {
@@ -395,6 +412,10 @@ class WebViewBloc extends Bloc<WebViewEvent, WebViewState> {
 // ====================
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // <--- ДОБАВИТЬ ВЫЗОВ ATT В НАЧАЛО main() --->
+  await _initATT();
+
   try {
     await Firebase.initializeApp();
   } catch (e, stack) {
@@ -426,6 +447,7 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
   @override
   Widget build(BuildContext context) {
+    _initATT();
     return MaterialApp(
       home: BlocProvider(
         create: (_) => SplashBloc(TokenChannelService())..add(SplashStarted()),
@@ -504,11 +526,29 @@ class _MainWebViewScreenState extends State<MainWebViewScreen> {
   final String url = WEBVIEW_URL;
   bool hasTimeout = false;
   InAppWebViewController? _controller;
-
+@override
+  void initState() {
+  _initATT();
+  ATT();
+    super.initState();
+  }
+void ATT()async {
+  final TrackingStatus s = await AppTrackingTransparency.trackingAuthorizationStatus;
+  await Future.delayed(const Duration(milliseconds: 1000));
+  await AppTrackingTransparency.requestTrackingAuthorization();
+}
+  Future<void> _initATT() async {
+    if (!Platform.isIOS) return;
+    final TrackingStatus s = await AppTrackingTransparency.trackingAuthorizationStatus;
+    if (s == TrackingStatus.notDetermined) {
+      await Future.delayed(const Duration(milliseconds: 1000));
+      await AppTrackingTransparency.requestTrackingAuthorization();
+    }
+    final uuid = await AppTrackingTransparency.getAdvertisingIdentifier();
+    print("UUID: $uuid");
+  }
   void reloadWebView() {
-    setState(() {
-      hasTimeout = false;
-    });
+
     _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
   }
 
@@ -521,7 +561,7 @@ class _MainWebViewScreenState extends State<MainWebViewScreen> {
           backgroundColor: Colors.black,
           body: Stack(
             children: [
-              if (!hasTimeout)
+
                 SafeArea(
                   child: InAppWebView(
                     initialSettings: InAppWebViewSettings(
@@ -549,6 +589,8 @@ class _MainWebViewScreenState extends State<MainWebViewScreen> {
                       webBloc.add(WebViewSetController(controller));
                     },
                     onLoadStop: (controller, url) async {
+
+                      print("STart load URL "+url.toString());
                       try {
                         await webBloc.sendDeviceDataToWeb();
                         Future.delayed(const Duration(seconds: 6), () async {
@@ -561,41 +603,10 @@ class _MainWebViewScreenState extends State<MainWebViewScreen> {
                     shouldOverrideUrlLoading: (controller, navigationAction) async {
                       return NavigationActionPolicy.ALLOW;
                     },
-                    onLoadError: (controller, url, code, message) {
-                      print('MainWebViewScreen.onLoadError $code: $message');
-                      if (code == -1001) {
-                        setState(() {
-                          hasTimeout = true;
-                        });
-                      }
-                    },
-                    onLoadHttpError: (controller, url, statusCode, description) {
-                      print('MainWebViewScreen.onLoadHttpError $statusCode: $description');
-                    },
+
                   ),
                 ),
-              if (hasTimeout)
-                Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.cloud_off, color: Colors.white, size: 60),
-                      const SizedBox(height: 16),
-                      const Text(
-                        "Время ожидания истекло",
-                        style: TextStyle(color: Colors.white, fontSize: 18),
-                      ),
-                      const SizedBox(height: 8),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.deepPurple,
-                        ),
-                        onPressed: reloadWebView,
-                        child: const Text("Повторить"),
-                      ),
-                    ],
-                  ),
-                ),
+
               if (state.isLoading)
                 Center(
                   child: CircularPercentIndicator(
